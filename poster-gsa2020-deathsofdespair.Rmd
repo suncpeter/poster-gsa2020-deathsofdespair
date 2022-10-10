@@ -1,0 +1,129 @@
+---
+title: 'Code for GSA 2020 Poster'
+author: "Peter Sun"
+date: "2020"
+output:
+  pdf_document
+toc: true
+header-includes:
+- \usepackage{pdflscape}
+- \newcommand{\blandscape}{\begin{landscape}}
+- \newcommand{\elandscape}{\end{landscape}}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen=999)
+```
+
+```{r import, include=FALSE}
+library("knitr")
+library("tidyverse")
+library("ggplot2")
+library("readr")
+library("ggthemes")
+library("haven")
+library("knitr")
+library(kableExtra)
+library("viridis")
+library("RColorBrewer")
+library("ggrepel")
+library(glue)
+library(ggmap)
+library(tidycensus)
+library(tigris)
+library(mice)
+library(vroom)
+library(rgdal)
+library(ggpubr)
+library(jcolors)
+library(openxlsx)
+library(urbnmapr)
+
+tidy_file <- function(filename) {
+  f <- read_tsv(filename, col_names = TRUE)
+  names(f) <- make.names(names(f), unique = TRUE)
+  return(f)
+}
+
+# Get state abbreviations
+unique_state <- tibble(State.Abbreviation = unique(fips_codes$state),
+                   State = unique(fips_codes$state_name))
+
+# FINAL MAP
+get_final <- function(df, t, bw = 30) {
+  # get spatial data
+  spatial_data <- left_join(get_urbn_map(map = "states", sf = TRUE),
+                            df,
+                            by = "state_fips")
+  
+  p <- ggplot() +
+    geom_sf(spatial_data,
+            mapping = aes(fill = rate),
+            color = "gray80", size = 0.5) +
+    labs(fill = "Age 65+ Deaths Per 100,000", title = t) +
+    theme_void() +
+    theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),
+      panel.background = element_rect(fill = "transparent",colour = NA),
+      plot.background = element_rect(fill = "transparent",colour = NA),
+      plot.title = element_text(color = "gray80", size = 25, face = "bold"),
+      legend.text = element_text(color = "gray80", size = 15),
+      legend.title = element_text(color = "gray80", size = 15),
+      legend.position = "bottom"
+    ) +
+    scale_fill_viridis(option = "inferno", direction = -1, na.value = "gray90", begin = 0.3, end = 1)
+  return(list(df = df, sd = spatial_data, p = p))
+}
+
+# export to geoda for eb bayes
+s2.test <- tidy_file("data/SINGLE_1999_65.txt") %>%
+  filter(!is.na(State)) %>%
+  select(STATEFP = State.Code, Deaths, Population, Crude.Rate, Age.Adjusted.Rate)
+write.xlsx(s2.test, "data/s2.test.xlsx")
+
+s4.test <- tidy_file("data/SINGLE_2018_65.txt") %>%
+  filter(!is.na(State)) %>%
+  select(STATEFP = State.Code, Deaths, Population, Crude.Rate, Age.Adjusted.Rate)
+write.xlsx(s4.test, "data/s4.test.xlsx")
+
+f3og <- tidy_file("data/SINGLE_2009_65.txt") %>%
+  filter(!is.na(State)) %>%
+  select(STATEFP = State.Code, Deaths, Population, Crude.Rate, Age.Adjusted.Rate)
+write.xlsx(f3og, "data/f3og.xlsx")
+
+# with 55+
+y1 <- tidy_file("data/55ABOVE_1999.txt") %>%
+  filter(!is.na(State)) %>%
+  select(STATEFP = State.Code, Deaths, Population, Crude.Rate, Age.Adjusted.Rate)
+write.xlsx(y1, "data/y1.xlsx")
+y2 <- tidy_file("data/55ABOVE_2018.txt") %>%
+  filter(!is.na(State)) %>%
+  select(STATEFP = State.Code, Deaths, Population, Crude.Rate, Age.Adjusted.Rate)
+write.xlsx(y2, "data/y2.xlsx")
+
+# real final
+e1 <- tidy_file("data/THREE_STATE_MCD_1999-2001_65ABOVE_DOD.txt") %>%
+  filter(!is.na(State)) %>%
+  select(STATEFP = State.Code, Deaths, Population, Crude.Rate, Age.Adjusted.Rate)
+write.xlsx(e1, "data/e1.xlsx")
+e2 <- tidy_file("data/THREE_STATE_MCD_2016-2018_65ABOVE_DOD.txt") %>%
+  filter(!is.na(State)) %>%
+  select(STATEFP = State.Code, Deaths, Population, Crude.Rate, Age.Adjusted.Rate)
+write.xlsx(e2, "data/e2.xlsx")
+
+ee1 <- read_csv("data/EB_rates/e1.csv") %>%
+  select(state_fips = STATEFP, rate = R_EBS) %>%
+  mutate(rate = rate*100000)
+ee2 <- read_csv("data/EB_rates/e2.csv") %>%
+  select(state_fips = STATEFP, rate = R_EBS) %>%
+  mutate(rate = rate*100000)
+e1m <- get_final(ee1, t = "1999-2001")
+e2m <- get_final(ee2, t = "2016-2018")
+
+# empirical bayes
+ggpubr::ggarrange(e1m$p, e2m$p, ncol = 2, nrow = 1, common.legend = T, legend = "bottom") # 1999-2001, 2016-2018, 65+
+map_eb <- ggpubr::ggarrange(e1m$p, e2m$p, ncol = 2, nrow = 1, common.legend = T, legend = "bottom") # 1999-2001, 2016-2018, 65+
+ggsave("map.png", plot = map_eb, width = 10, height = 5, dpi = 600, bg = "transparent")
+```
